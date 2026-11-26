@@ -1,5 +1,28 @@
 const day=86400000;
 export function shuffle(list,rng=Math.random){const out=[...list];for(let i=out.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[out[i],out[j]]=[out[j],out[i]];}return out;}
+const choiceKey=s=>s.normalize('NFKD').toLowerCase().replace(/&/g,'and').replace(/[^\p{L}\p{N}]/gu,'');
+export function createQuizChoices({cards,pools}){
+ const banks=new Map(Object.entries(pools).map(([name,values])=>[name,[...new Map(values.map(value=>[choiceKey(value),value])).entries()].filter(([key])=>key)]));
+ const projects=new Map();
+ for(const c of cards)if(c.kind==='sideProjects'){
+  if(!projects.has(c.group))projects.set(c.group,new Set());
+  for(const label of [c.answer,...(c.aliases??[])])projects.get(c.group).add(choiceKey(label));
+ }
+ return (card,rng=Math.random)=>{
+  const blocked=new Set((card.kind==='sideProjects'&&projects.get(card.group))||[]);
+  for(const label of [card.answer,...(card.aliases??[]),...(card.exclude??[])])blocked.add(choiceKey(label));
+  const bank=banks.get(card.pool)??[];
+  const available=bank.filter(([key])=>!blocked.has(key));
+  if(available.length<3)return [];
+  const out=[card.answer];
+  for(let i=0;i<3;i++){
+   const j=i+Math.floor(rng()*(available.length-i));
+   [available[i],available[j]]=[available[j],available[i]];
+   out.push(available[i][1]);
+  }
+  return shuffle(out,rng);
+ };
+}
 export function round(cards,topic,mode,limit,progress={},rng=Math.random,now=Date.now(),onlyMissed=false){
  const byKind=new Map();const old=new Map();const played=new Set();const result=[];
  for(const c of shuffle(cards,rng)){

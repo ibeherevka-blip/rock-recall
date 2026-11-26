@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {round, record} from '../docs/engine.mjs';
+import {readFileSync} from 'node:fs';
+import {round, record, createQuizChoices} from '../docs/engine.mjs';
 const kinds=['covers','photos','vocals','translations','debuts','facts'];
 const cards=kinds.flatMap(kind=>Array.from({length:14},(_,i)=>({id:`${kind}-${i}`,kind,group:`g${i}`,answer:`a${i}`,pool:'artists'})));
 const rng=()=>0.42;
@@ -22,4 +23,19 @@ test('side-project quiz selects only side-project cards',()=>{
 });
 test('missed cards remain due and mastered cards are spaced',()=>{
  const p={};record(p,'x',false,100);assert.equal(p.x.due,100);record(p,'x',true,100);const due=p.x.due;assert.ok(due>100);record(p,'x',true,due);assert.ok(p.x.due-due>due-100);assert.equal(p.x.seen,3);
+});
+test('quiz excludes aliases, duplicate labels and other side projects of the same act',()=>{
+ const side={kind:'sideProjects',pool:'projects',group:'Band',answer:'Project A',aliases:['Project Alpha']};
+ const cards=[side,{...side,answer:'Other Valid Project'}];
+ const choices=createQuizChoices({cards,pools:{projects:['Project A','Project A!','Project Alpha','Other Valid Project','One','Two','Three','One!']}})(side,rng);
+ assert.deepEqual(new Set(choices.map(x=>x.replace(/!/g,''))),new Set(['Project A','One','Two','Three']));
+});
+test('all published cards get four distinct options including the correct answer',()=>{
+ const deck=JSON.parse(readFileSync(new URL('../docs/deck.json',import.meta.url),'utf8'));
+ const make=createQuizChoices(deck);
+ for(const card of deck.cards){
+  const choices=make(card,rng);
+  assert.equal(new Set(choices).size,4,card.id);
+  assert.ok(choices.includes(card.answer),card.id);
+ }
 });

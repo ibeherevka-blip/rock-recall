@@ -1,4 +1,4 @@
-import {round, record} from './engine.mjs?v=2';
+import {round, record, createQuizChoices} from './engine.mjs?v=3';
 
 const TOPICS={mix:'Микс',covers:'Обложки',photos:'Фото групп',vocals:'Вокалисты',translations:'Переводы',debuts:'Дебюты',facts:'Факты',sideProjects:'Сайд-проекты'};
 const MODES={study:'Учить',quiz:'Квиз'};
@@ -6,7 +6,7 @@ const KEY='rock-recall-v1';
 const app=document.querySelector('#app');
 const state={topic:'mix',mode:'study',progress:{}};
 try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&typeof s==='object'){if(Object.hasOwn(TOPICS,s.topic))state.topic=s.topic;if(Object.hasOwn(MODES,s.mode))state.mode=s.mode;if(s.progress&&typeof s.progress==='object'&&!Array.isArray(s.progress))state.progress=s.progress;}}catch{}
-let deck, session, canSave=true;
+let deck, session, quizChoices, canSave=true;
 const num=n=>n.toLocaleString('ru');
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch{canSave=false;}}
 function el(tag,text,cls){const node=document.createElement(tag);if(text)node.textContent=text;if(cls)node.className=cls;return node;}
@@ -22,7 +22,7 @@ function matches(c){return state.topic==='mix'||c.kind===state.topic;}
 function updateHome(){
  const total=state.topic==='mix'?deck.cards.length:deck.meta.counts[state.topic]??0;
  const hasMissed=deck.cards.some(c=>matches(c)&&state.progress[c.id]?.last===false);
- document.querySelector('#home-help').textContent=state.mode==='study'?'Вспомни ответ, открой карточку и отметь, знал ли ты его. Ошибки повторятся.':'10 карточек без повторов в раунде. Вспомни ответ и оцени себя.';
+ document.querySelector('#home-help').textContent=state.mode==='study'?'Вспомни ответ, открой карточку и отметь, знал ли ты его. Ошибки повторятся.':'10 вопросов без повторов. В каждом — четыре варианта ответа.';
  document.querySelector('#topic-count').textContent=`В этой подборке: ${num(total)} карточек.`;
  document.querySelector('#repeat').hidden=!hasMissed;
  document.querySelector('#start').textContent=state.mode==='study'?'Начать тренировку':'Начать квиз';
@@ -55,16 +55,22 @@ function question(){
  if(c.kind==='facts')stuff.push(el('p',c.detail,'fact'));
  if(c.clue)stuff.push(el('p',c.clue,'fact'));
  const out=el('section');out.id='answer-area';stuff.push(out);
- out.append(btn('Показать ответ',reveal,'primary'));
+ if(session.mode==='quiz'){
+  const choices=quizChoices(c);
+  if(choices.length===4)out.append(row('options',...choices.map(label=>btn(label,()=>reveal(label)))));
+  else out.append(el('p','Для этого вопроса не удалось подобрать четыре варианта.','no'),btn('К темам',home));
+ }else out.append(btn('Показать ответ',()=>reveal(),'primary'));
  paint(...stuff);
 }
-function reveal(){
+function reveal(chosen){
  const out=document.querySelector('#answer-area');
  const item=session.queue[session.index];const c=item.card;
  const box=el('div','','feedback');box.setAttribute('role','status');
- box.append(el('p','Ответ','muted'),el('p',c.answer));
+ const quiz=session.mode==='quiz';const correct=chosen===c.answer;
+ box.append(el('p',quiz?(correct?'Верно':'Неверно'):'Ответ',quiz?(correct?'yes':'no'):'muted'),el('p',c.answer));
+ if(quiz&&!correct)box.append(el('p',`Твой ответ: ${chosen}`,'muted'));
  if(c.detail&&c.kind!=='facts')box.append(el('p',c.detail,'muted'));
- const actions=row('actions',btn('Не знал',()=>advance(false)),btn('Знал',()=>advance(true),'primary'));
+ const actions=quiz?row('actions',btn('Дальше',()=>advance(correct),'primary')):row('actions',btn('Не знал',()=>advance(false)),btn('Знал',()=>advance(true),'primary'));
  out.replaceChildren(box,actions);actions.querySelector('button').focus({preventScroll:true});
 }
 function advance(correct){
@@ -82,5 +88,5 @@ function finish(){
  lines.push(row('actions',btn('Ещё раунд',()=>startSession(session.onlyMissed),'primary'),btn('К темам',home)));
  paint(...lines);
 }
-async function load(){try{const response=await fetch('./deck.json?v=2');if(!response.ok)throw new Error('deck');deck=await response.json();if(deck.schema!==1||!Array.isArray(deck.cards))throw new Error('schema');home();}catch{paint(el('h1','Не удалось загрузить карточки'),el('p','Проверь подключение и попробуй ещё раз.','muted'),row('actions',btn('Повторить',load,'primary')));}}
+async function load(){try{const response=await fetch('./deck.json?v=2');if(!response.ok)throw new Error('deck');deck=await response.json();if(deck.schema!==1||!Array.isArray(deck.cards))throw new Error('schema');quizChoices=createQuizChoices(deck);home();}catch{paint(el('h1','Не удалось загрузить карточки'),el('p','Проверь подключение и попробуй ещё раз.','muted'),row('actions',btn('Повторить',load,'primary')));}}
 load();
