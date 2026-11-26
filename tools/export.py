@@ -12,7 +12,9 @@ from PIL import Image, ImageOps
 EMBED = re.compile(r'!\[\[([^\]|]+)(?:\|[^\]]+)?\]\]')
 SECTIONS = re.compile(r'^## ([^\n]+)\n(.*?)(?=^#{1,2} |\Z)', re.M | re.S)
 ALBUMS = re.compile(r'^### ([^\n]+)\n(.*?)(?=^### |\Z)', re.M | re.S)
-TITLES = {'debuts':'Дебютный альбом','vocals':'Солист','facts':'Интересные факты','covers':'Студийные альбомы'}
+TITLES = {'debuts':'Дебютный альбом','vocals':'Солист','facts':'Интересные факты','covers':'Студийные альбомы','sideProjects':'Сайд-проекты участников'}
+SIDE_ROW = re.compile(r'^(.*?)\s+—\s+\*\*(.+?)\*\*:\s*(.+)$')
+SOURCE_NOTE = re.compile(r'\s*\(\[(?:источник|источники)\]\(<https?://[^>]+>\)\)\s*$', re.I)
 UNCERTAIN = re.compile(r'^(?:нет\b|неизвестно\b|не указан\w*\b|уточняется\b|отсутствует\b|n/a\b)', re.I)
 IMAGE_SUFFIXES = {'.jpg','.jpeg','.png','.webp','.avif','.gif','.bmp','.tiff'}
 
@@ -35,6 +37,25 @@ def key(text):
 
 def accepted(text):
     return bool(text and text not in {'—','-','?'} and not UNCERTAIN.match(text))
+
+
+def side_project(group, raw):
+    row = SIDE_ROW.fullmatch(raw)
+    if not row:
+        return None
+    project, member = map(clean, row.groups()[:2])
+    detail = clean(SOURCE_NOTE.sub('', row[3]))
+    if not all(map(accepted, (project, member, detail))):
+        return None
+    short = re.sub(r'\s*\([^)]*\)\s*$', '', project).strip()
+    # A member's name is itself the answer on some solo-project cards.
+    names = {project, short} - {''}
+    mask = re.compile(r'(?<!\w)(?:'+'|'.join(map(re.escape, sorted(names,key=lambda x:(-len(x),x))))+r')(?!\w)', re.I)
+    display_member = 'этот участник' if mask.search(member) else member
+    prompt = f'Как называется проект? {group} · {display_member}'
+    if mask.search(group):
+        prompt = f'Как называется проект? Участник: {display_member}'
+    return project, member, prompt, mask.sub('…', detail), detail
 
 
 def build(vault, out, limit=None):
@@ -69,7 +90,7 @@ def build(vault, out, limit=None):
         assets[target]=path
         return target
 
-    def add(group,kind,prompt,answer,pool,*,aliases=(),detail='',asset=None,identity='',exclude=()):
+    def add(group,kind,prompt,answer,pool,*,aliases=(),detail='',asset=None,identity='',exclude=(),clue=''):
         if not accepted(answer):return
         cid=sha256(f'{group}\x1f{kind}\x1f{identity}'.encode()).hexdigest()[:24]
         if cid in ids:return
@@ -77,6 +98,7 @@ def build(vault, out, limit=None):
         card=dict(id=cid,kind=kind,group=group,prompt=prompt,answer=answer,pool=pool)
         if aliases:card['aliases']=list(dict.fromkeys(x for x in aliases if accepted(x) and key(x)!=key(answer)))
         if detail:card['detail']=detail
+        if clue:card['clue']=clue
         if asset:card['image']=asset
         if exclude:card['exclude']=list(exclude)
         cards.append(card);pools[pool].add(answer)
@@ -118,6 +140,13 @@ def build(vault, out, limit=None):
             for name in sorted({group,*aliases},key=len,reverse=True):
                 if len(name)>=3:fact=re.sub(r'(?<!\w)'+re.escape(name)+r'(?!\w)','[…] ',fact,flags=re.I)
             add(group,'facts','О ком этот факт?',group,'artists',aliases=aliases,detail=' '.join(fact.split()),identity=clean(raw))
+        for raw in items(sections.get('sideProjects','')):
+            side = side_project(group, raw)
+            if not side:
+                issues.append({'group':group,'type':'unparsed-side-project'})
+                continue
+            project,member,prompt,clue,detail = side
+            add(group,'sideProjects',prompt,project,'projects',identity=project+'|'+member,clue=clue,detail=detail)
 
     def bake(item):
         target,source=item

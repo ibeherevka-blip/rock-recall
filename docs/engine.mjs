@@ -1,8 +1,5 @@
 const day=86400000;
-export const normalize=s=>String(s??'').normalize('NFKD').toLowerCase().replace(/ё/g,'е').replace(/\p{M}/gu,'').replace(/&/g,'and').replace(/[^\p{L}\p{N}]/gu,'');
-export function isAnswer(text,card){const key=normalize(text);return Boolean(key)&&[card.answer,...(card.aliases??[])].some(x=>normalize(x)===key);}
 export function shuffle(list,rng=Math.random){const out=[...list];for(let i=out.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[out[i],out[j]]=[out[j],out[i]];}return out;}
-export function options(card,pools,rng=Math.random){const seen=new Set([card.answer,...(card.aliases??[]),...(card.exclude??[])].map(normalize));const out=[card.answer];for(const value of shuffle(pools[card.pool]??[],rng)){const key=normalize(value);if(!key||seen.has(key))continue;seen.add(key);out.push(value);if(out.length===4)break;}return out.length===4?shuffle(out,rng):[];}
 export function round(cards,topic,mode,limit,progress={},rng=Math.random,now=Date.now(),onlyMissed=false){
  const byKind=new Map();const old=new Map();const played=new Set();const result=[];
  for(const c of shuffle(cards,rng)){
@@ -18,8 +15,7 @@ export function round(cards,topic,mode,limit,progress={},rng=Math.random,now=Dat
   if(!more)break;
  }}
  take(byKind);if(result.length===0&&!onlyMissed)take(old);
- const offset=rng()<.5?0:1;
- return result.map((c,i)=>({...c,format:mode==='quiz'&&(i+offset)%2===0?'choice':'recall'}));
+ return result;
 }
 export function record(progress,id,correct,now=Date.now()){
  const old=progress[id]??{};const streak=correct?(old.streak??0)+1:0;

@@ -18,6 +18,9 @@ PROFILE='''# Example
 ![[Covers/Studio/cover.jpg|220]]
 ### Example Two
 ![[Covers/Studio/two.jpg|220]]
+## 🧩 Сайд-проекты участников
+- [[Side Name|The Side Name]] — **Jane Doe**: Jane Doe создала The Side Name в 2000 году ([источник](<https://example.org/>)).
+- **Solo Artist (сольный проект)** — **Solo Artist**: сольная карьера.
 ## 🃏 Карточки для квиза
 <!--SR:!2026-06-09,4,272-->
 '''
@@ -30,7 +33,12 @@ class ExportTests(unittest.TestCase):
    for name in ['Photos/example.jpg','Covers/Studio/cover.jpg','Covers/Studio/two.jpg']:
     p=v/name;p.parent.mkdir(parents=True,exist_ok=True);Image.new('RGB',(700,700)).save(p)
    data=build(v,root/'site'); cards=data['cards']; kinds={c['kind'] for c in cards}
-   self.assertEqual(kinds,{'covers','photos','vocals','translations','debuts','facts'})
+   self.assertEqual(kinds,{'covers','photos','vocals','translations','debuts','facts','sideProjects'})
+   side=[c for c in cards if c['kind']=='sideProjects']
+   self.assertEqual([c['answer'] for c in side],['The Side Name','Solo Artist (сольный проект)'])
+   self.assertIn('Jane Doe',side[0]['prompt']);self.assertIn('2000',side[0]['clue'])
+   self.assertNotIn('Side Name',side[0]['clue']);self.assertNotIn('https',str(side))
+   self.assertNotIn('Solo Artist',side[1]['prompt'])
    self.assertEqual(sum(c['kind']=='covers' for c in cards),2)
    self.assertEqual(next(c for c in cards if c['kind']=='debuts')['answer'],'Example One')
    self.assertEqual(next(c for c in cards if c['kind']=='vocals')['answer'],'Jane Doe')

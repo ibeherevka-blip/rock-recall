@@ -1,6 +1,6 @@
-import {round, options, isAnswer, record} from './engine.mjs';
+import {round, record} from './engine.mjs?v=2';
 
-const TOPICS={mix:'Микс',covers:'Обложки',photos:'Фото групп',vocals:'Вокалисты',translations:'Переводы',debuts:'Дебюты',facts:'Факты'};
+const TOPICS={mix:'Микс',covers:'Обложки',photos:'Фото групп',vocals:'Вокалисты',translations:'Переводы',debuts:'Дебюты',facts:'Факты',sideProjects:'Сайд-проекты'};
 const MODES={study:'Учить',quiz:'Квиз'};
 const KEY='rock-recall-v1';
 const app=document.querySelector('#app');
@@ -22,7 +22,7 @@ function matches(c){return state.topic==='mix'||c.kind===state.topic;}
 function updateHome(){
  const total=state.topic==='mix'?deck.cards.length:deck.meta.counts[state.topic]??0;
  const hasMissed=deck.cards.some(c=>matches(c)&&state.progress[c.id]?.last===false);
- document.querySelector('#home-help').textContent=state.mode==='study'?'Вспомни ответ, открой карточку и отметь, знал ли ты его.':'10 вопросов: четыре варианта или свой ответ без подсказок.';
+ document.querySelector('#home-help').textContent=state.mode==='study'?'Вспомни ответ, открой карточку и отметь, знал ли ты его. Ошибки повторятся.':'10 карточек без повторов в раунде. Вспомни ответ и оцени себя.';
  document.querySelector('#topic-count').textContent=`В этой подборке: ${num(total)} карточек.`;
  document.querySelector('#repeat').hidden=!hasMissed;
  document.querySelector('#start').textContent=state.mode==='study'?'Начать тренировку':'Начать квиз';
@@ -37,7 +37,7 @@ function home(){
 function startSession(onlyMissed){
  const mode=onlyMissed?'study':state.mode;
  const cards=round(deck.cards,state.topic,mode,10,state.progress,Math.random,Date.now(),onlyMissed);
- session={mode,onlyMissed,queue:cards.map(card=>({card,retry:false})),index:0,base:cards.length,seen:0,results:[],variants:null};
+ session={mode,onlyMissed,queue:cards.map(card=>({card,retry:false})),index:0,base:cards.length,seen:0,results:[]};
  if(!cards.length){paint(el('h1','Нет карточек для повторения'),row('actions',btn('К темам',home,'primary')));return;}
  question();
 }
@@ -53,33 +53,24 @@ function question(){
  const stuff=[...header(item),title];
  if(c.image)stuff.push(showArt(c));
  if(c.kind==='facts')stuff.push(el('p',c.detail,'fact'));
- const isQuiz=session.mode==='quiz';
- session.variants=isQuiz&&c.format==='choice'?options(c,deck.pools):[];
+ if(c.clue)stuff.push(el('p',c.clue,'fact'));
  const out=el('section');out.id='answer-area';stuff.push(out);
+ out.append(btn('Показать ответ',reveal,'primary'));
  paint(...stuff);
- if(!isQuiz){out.append(btn('Показать ответ',()=>reveal(), 'primary'));return;}
- if(session.variants.length){out.append(row('options',...session.variants.map(value=>btn(value,()=>reveal(isAnswer(value,c),value)))));out.append(row('actions',btn('Не знаю',()=>reveal(false))));return;}
- const form=el('form');const label=el('label','Твой ответ','label');label.htmlFor='typed';const input=el('input','','text-input');input.id='typed';input.placeholder='Введи ответ';input.autocomplete='off';input.required=true;
- const submit=btn('Проверить',()=>{},'primary');submit.type='submit';
- form.addEventListener('submit',e=>{e.preventDefault();const value=input.value.trim();if(value)reveal(isAnswer(value,c),value,true);else input.focus();});
- form.append(label,input,row('actions compact',submit,btn('Не знаю',()=>reveal(false))));out.append(form);
 }
-function reveal(correct,typed='',allowOverride=false){
+function reveal(){
  const out=document.querySelector('#answer-area');
  const item=session.queue[session.index];const c=item.card;
  const box=el('div','','feedback');box.setAttribute('role','status');
- const verdict=el('p',correct===undefined?'Ответ':correct?'Верно':'Не засчитано',correct===undefined?'muted':correct?'yes':'no');
- box.append(verdict,el('p',c.answer));
+ box.append(el('p','Ответ','muted'),el('p',c.answer));
  if(c.detail&&c.kind!=='facts')box.append(el('p',c.detail,'muted'));
- if(typed&&correct===false)box.append(el('p',`Твой ответ: ${typed}`,'muted'));
- const actions=correct===undefined?row('actions',btn('Не знал',()=>advance(false,'')),btn('Знал',()=>advance(true,''),'primary')):row('actions',btn('Дальше',()=>advance(correct,typed),'primary'));
- if(allowOverride&&!correct)actions.append(btn('Засчитать по смыслу',()=>advance(true,typed)));
+ const actions=row('actions',btn('Не знал',()=>advance(false)),btn('Знал',()=>advance(true),'primary'));
  out.replaceChildren(box,actions);actions.querySelector('button').focus({preventScroll:true});
 }
-function advance(correct,typed){
+function advance(correct){
  const item=session.queue[session.index];const c=item.card;
  record(state.progress,c.id,correct);save();
- if(!item.retry){session.seen++;session.results.push({c,correct,typed});}
+ if(!item.retry){session.seen++;session.results.push({c,correct});}
  if(!correct&&!item.retry&&session.mode==='study')session.queue.splice(Math.min(session.queue.length,session.index+4),0,{card:c,retry:true});
  session.index++;question();
 }
@@ -87,9 +78,9 @@ function finish(){
  const wrong=session.results.filter(x=>!x.correct);
  const n=session.results.length;
  const lines=[el('span',`${MODES[session.mode]} · ${TOPICS[state.topic]}`,'eyebrow'),el('h1',`${n-wrong.length} из ${n}`),el('p','Верных ответов с первой попытки. Повторы не меняют результат раунда.','intro')];
- if(wrong.length){const list=el('ol','','result-list');for(const {c,typed} of wrong){const li=el('li');li.append(el('p',c.kind==='facts'?c.detail:c.prompt));if(c.image)li.append(showArt(c,true));li.append(el('p',`${c.answer}${c.kind==='covers'?` — ${c.detail}`:''}`,'yes'));if(typed)li.append(el('p',`Твой ответ: ${typed}`,'muted'));list.append(li);}lines.push(el('h2','Разбор ошибок','empty'),list);}
+ if(wrong.length){const list=el('ol','','result-list');for(const {c} of wrong){const li=el('li');li.append(el('p',c.kind==='facts'?c.detail:c.prompt));if(c.clue)li.append(el('p',c.clue,'muted'));if(c.image)li.append(showArt(c,true));li.append(el('p',`${c.answer}${c.kind==='covers'?` — ${c.detail}`:''}`,'yes'));list.append(li);}lines.push(el('h2','Разбор ошибок','empty'),list);}
  lines.push(row('actions',btn('Ещё раунд',()=>startSession(session.onlyMissed),'primary'),btn('К темам',home)));
  paint(...lines);
 }
-async function load(){try{const response=await fetch('./deck.json');if(!response.ok)throw new Error('deck');deck=await response.json();if(deck.schema!==1||!Array.isArray(deck.cards))throw new Error('schema');home();}catch{paint(el('h1','Не удалось загрузить карточки'),el('p','Проверь подключение и попробуй ещё раз.','muted'),row('actions',btn('Повторить',load,'primary')));}}
+async function load(){try{const response=await fetch('./deck.json?v=2');if(!response.ok)throw new Error('deck');deck=await response.json();if(deck.schema!==1||!Array.isArray(deck.cards))throw new Error('schema');home();}catch{paint(el('h1','Не удалось загрузить карточки'),el('p','Проверь подключение и попробуй ещё раз.','muted'),row('actions',btn('Повторить',load,'primary')));}}
 load();
